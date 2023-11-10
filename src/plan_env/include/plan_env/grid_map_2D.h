@@ -9,10 +9,18 @@
 
 // namespace cost_map {
 class CostMap {
+  // pos 二维世界坐标
+  // idx 二维栅格坐标
+  // adr 栅格存储到一维数组的坐标
 public:
   typedef std::shared_ptr<CostMap> Ptr;
   CostMap() = delete;
   CostMap(ros::NodeHandle &nh, const std::string &topic_name);
+  /**
+   * @brief 接收map_server发布的地图
+   *
+   * @param map
+   */
   void mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &map);
   bool hasMap() { return has_map_; }
   void posToIdx(const Eigen::Vector2d &pos, Eigen::Vector2i &idx);

@@ -42,15 +42,15 @@ public:
   ErrorInfo searchPath(const int &start_adr, const int &goal_adr,
                        nav_msgs::Path &path);
   void getNeighbors(const int &current_adr, std::vector<int> &neighbors_adr);
-  void getNeighbors(const Eigen::Vector3i &current_idx,
-                    std::vector<Eigen::Vector3i> &neighbors_idx);
+  // void getNeighbors(const Eigen::Vector3i &current_idx,
+  //                   std::vector<Eigen::Vector3i> &neighbors_idx);
   ErrorInfo getMoveCost(const int &current_adr, const int &neighbor_adr,
                         int &move_cost);
-  ErrorInfo getMoveCost(const Eigen::Vector3i &current_idx,
-                        const Eigen::Vector3i &neighbor_idx, int &move_cost);
+  // ErrorInfo getMoveCost(const Eigen::Vector3i &current_idx,
+  //                       const Eigen::Vector3i &neighbor_idx, int &move_cost);
   void getDistance(const int &adr1, const int &adr2, int &distance);
-  void getDistance(const Eigen::Vector3i &idx1, const Eigen::Vector3i &idx2,
-                   int &distance);
+  // void getDistance(const Eigen::Vector3i &idx1, const Eigen::Vector3i &idx2,
+  //                  int &distance);
 
 private:
   ros::NodeHandle nh_;
