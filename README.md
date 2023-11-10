@@ -2,6 +2,7 @@
 Some common planning algorithms for car
 
 map_server -> /map
+配置文件里分辨率不要动，保持为1
 
 plan_env: 地图管理，提供操作地图的API
 

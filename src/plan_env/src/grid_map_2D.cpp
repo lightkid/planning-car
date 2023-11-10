@@ -13,7 +13,7 @@ void CostMap::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &map) {
   x_origin = map->info.origin.position.x;
   y_origin = map->info.origin.position.y;
   resolution_ = map->info.resolution;
-  x_size = map->info.width;
+  x_size = map->info.width; //图片的大小，不是实际尺寸
   y_size = map->info.height;
   frame_id_ = map->header.frame_id;
 
