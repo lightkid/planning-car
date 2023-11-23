@@ -4,9 +4,11 @@
 #include "geometry_msgs/PoseStamped.h"
 #include "nav_msgs/Path.h"
 #include "visualization_msgs/Marker.h"
+#include "visualization_msgs/MarkerArray.h"
 #include <ros/ros.h>
 
 #include <Eigen/Eigen>
+#include <chrono>
 #include <memory>
 #include <queue>
 
@@ -109,10 +111,12 @@ private:
   std::shared_ptr<RSPath> rs_path_ptr_;
 
   // test
-  ros::Publisher nbr_vis_pub_;
-  ros::Publisher shape_vis_pub_;
-  ros::Publisher select_point_pub_;
-  nav_msgs::Path select_points_;
+  ros::Publisher shape_path_pub_;
+  ros::Publisher searched_tree_pub_;
+  // ros::Publisher nbr_vis_pub_;
+  // ros::Publisher shape_vis_pub_;
+  // ros::Publisher select_point_pub_;
+  // nav_msgs::Path select_points_;
 };
 
 #endif

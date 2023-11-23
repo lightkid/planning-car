@@ -6,19 +6,22 @@ HybridAStar::HybridAStar(ros::NodeHandle &nh) : nh_(nh) {
     ros::spinOnce(); // wait for map
   }
   ROS_INFO("planner get map!");
-  nh.param("wheel_base", wheel_base_, 3.0);
-  nh.param("width", width_, 2.0);
-  nh.param("length", length_, 4.0);
-  nh.param("steering_angle", steering_angle_, 40.0);
-  nh.param("steering_angle_discrete_num", steering_angle_discrete_num_, 2);
-  nh.param("segment_length", segment_length_, 1.6);
-  nh.param("segment_length_discrete_num", segment_length_discrete_num_, 8);
-  nh.param("grid_size_xy", grid_size_xy_, 5);
-  nh.param("grid_size_phi", grid_size_phi_, 72);
-  nh.param("steering_penalty", steering_penalty_, 1.05);
-  nh.param("reversing_penalty", reversing_penalty_, 2.0);
-  nh.param("steering_change_penalty", steering_change_penalty_, 1.5);
-  nh.param("shot_distance", shot_distance_, 5.0);
+  nh.param("hybrid_a_star_demo/wheel_base", wheel_base_, 3.0);
+  nh.param("hybrid_a_star_demo/width", width_, 2.0);
+  nh.param("hybrid_a_star_demo/length", length_, 4.0);
+  nh.param("hybrid_a_star_demo/steering_angle", steering_angle_, 40.0);
+  nh.param("hybrid_a_star_demo/steering_angle_discrete_num",
+           steering_angle_discrete_num_, 2);
+  nh.param("hybrid_a_star_demo/segment_length", segment_length_, 1.6);
+  nh.param("hybrid_a_star_demo/segment_length_discrete_num",
+           segment_length_discrete_num_, 8);
+  nh.param("hybrid_a_star_demo/grid_size_xy", grid_size_xy_, 5);
+  nh.param("hybrid_a_star_demo/grid_size_phi", grid_size_phi_, 72);
+  nh.param("hybrid_a_star_demo/steering_penalty", steering_penalty_, 1.05);
+  nh.param("hybrid_a_star_demo/reversing_penalty", reversing_penalty_, 2.0);
+  nh.param("hybrid_a_star_demo/steering_change_penalty",
+           steering_change_penalty_, 1.5);
+  nh.param("hybrid_a_star_demo/shot_distance", shot_distance_, 5.0);
   steering_radian_ = steering_angle_ * M_PI / 180.0; // angle to radian
   steering_radian_step_size_ = steering_radian_ / steering_angle_discrete_num_;
   move_step_size_ = segment_length_ / segment_length_discrete_num_;
@@ -60,10 +63,14 @@ HybridAStar::HybridAStar(ros::NodeHandle &nh) : nh_(nh) {
       std::make_shared<RSPath>(wheel_base_ / std::tan(steering_radian_));
 
   // test
-  nbr_vis_pub_ = nh_.advertise<nav_msgs::Path>("search_tree", 10);
-  shape_vis_pub_ = nh.advertise<visualization_msgs::Marker>("shape", 10);
-  select_point_pub_ = nh.advertise<nav_msgs::Path>("select_point", 10);
-  select_points_.header.frame_id = "map";
+  // nbr_vis_pub_ = nh_.advertise<nav_msgs::Path>("search_tree", 10);
+  // shape_vis_pub_ = nh.advertise<visualization_msgs::Marker>("shape", 10);
+  // select_point_pub_ = nh.advertise<nav_msgs::Path>("select_point", 10);
+  // select_points_.header.frame_id = "map";
+  shape_path_pub_ =
+      nh_.advertise<visualization_msgs::MarkerArray>("shape_path", 2);
+  searched_tree_pub_ =
+      nh_.advertise<visualization_msgs::Marker>("searched_tree", 2);
 
   global_path_pub_ = nh_.advertise<nav_msgs::Path>("global_path", 2);
   goal_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(
@@ -95,7 +102,7 @@ void HybridAStar::goalCallback(
     shape.scale.y = 2;
     shape.color.a = 0.5;
     shape.color.r = 0.5;
-    shape_vis_pub_.publish(shape);
+    // shape_vis_pub_.publish(shape);
   } else {
     goal_(0) = msg->pose.position.x;
     goal_(1) = msg->pose.position.y;
@@ -106,8 +113,13 @@ void HybridAStar::goalCallback(
     // std::cout << "start: " << start.transpose() << std::endl;
     // std::cout << "goal: " << goal.transpose() << std::endl;
     nav_msgs::Path global_path;
-    select_points_.poses.clear();
+    // select_points_.poses.clear();
+    auto t1 = std::chrono::steady_clock::now();
     auto res = searchPath(pose_, goal_, global_path);
+    auto t2 = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float, std::milli>(t2 - t1).count();
+    std::cout << "generate global path used: " << dt << " ms" << std::endl;
+
     if (res.IsOK()) {
       pathVisualization(global_path);
       ROS_INFO("Global path search successed,%s", res.error_msg().c_str());
@@ -125,6 +137,11 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
                                   nav_msgs::Path &path) {
   path.poses.clear();
   search_tree_.clear();
+  if ((map_->isShapeCollision(start_pose(0), start_pose(1), start_pose(2))) ||
+      (map_->isShapeCollision(goal_pose(0), goal_pose(1), goal_pose(2)))) {
+    return ErrorInfo(ErrorCode::GP_PATH_SEARCH_ERROR,
+                     "Start or Goal is invalid!");
+  }
   auto compare = [&](const StateNode::Ptr &n1, const StateNode::Ptr &n2) {
     return n1->g_score_ + n1->h_score_ > n2->g_score_ + n2->h_score_;
   };
@@ -161,8 +178,8 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
   bool success = false;
   unsigned int count = 0;
   while (!openlist.empty() && ros::ok()) {
-    std::cout << "openlist size: " << openlist.size() << std::endl;
-    std::cout << "search tree size: " << search_tree_.size() << std::endl;
+    // std::cout << "openlist size: " << openlist.size() << std::endl;
+    // std::cout << "search tree size: " << search_tree_.size() << std::endl;
     auto current_ptr = openlist.top();
     openlist.pop();
     auto iter = search_tree_.find(current_ptr->adr_); // O(logn)
@@ -185,32 +202,32 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
         break;
       }
     }
-    nav_msgs::Path branch;
-    branch.poses.clear();
-    branch.header.frame_id = "map";
-    branch.header.stamp = ros::Time::now();
-    geometry_msgs::PoseStamped pose;
+    // nav_msgs::Path branch;
+    // branch.poses.clear();
+    // branch.header.frame_id = "map";
+    // branch.header.stamp = ros::Time::now();
+    // geometry_msgs::PoseStamped pose;
 
-    for (auto pos : current_ptr->intermediate_states_) {
-      pose.pose.position.x = pos.x();
-      pose.pose.position.y = pos.y();
-      pose.pose.orientation.w = cos(pos.z() * 0.5);
-      pose.pose.orientation.x = 0;
-      pose.pose.orientation.y = 0;
-      pose.pose.orientation.z = sin(pos.z() * 0.5);
-      branch.poses.push_back(pose);
-    }
-    pose.pose.position.x = current_ptr->pose_.x();
-    pose.pose.position.y = current_ptr->pose_.y();
-    pose.pose.orientation.w = cos(current_ptr->pose_.z() * 0.5);
-    pose.pose.orientation.x = 0;
-    pose.pose.orientation.y = 0;
-    pose.pose.orientation.z = sin(current_ptr->pose_.z() * 0.5);
-    branch.poses.push_back(pose);
-    nbr_vis_pub_.publish(branch);
+    // for (auto pos : current_ptr->intermediate_states_) {
+    //   pose.pose.position.x = pos.x();
+    //   pose.pose.position.y = pos.y();
+    //   pose.pose.orientation.w = cos(pos.z() * 0.5);
+    //   pose.pose.orientation.x = 0;
+    //   pose.pose.orientation.y = 0;
+    //   pose.pose.orientation.z = sin(pos.z() * 0.5);
+    //   branch.poses.push_back(pose);
+    // }
+    // pose.pose.position.x = current_ptr->pose_.x();
+    // pose.pose.position.y = current_ptr->pose_.y();
+    // pose.pose.orientation.w = cos(current_ptr->pose_.z() * 0.5);
+    // pose.pose.orientation.x = 0;
+    // pose.pose.orientation.y = 0;
+    // pose.pose.orientation.z = sin(current_ptr->pose_.z() * 0.5);
+    // branch.poses.push_back(pose);
+    // nbr_vis_pub_.publish(branch);
     // get neighbors
     getNeighbors(current_ptr, neighbor_nodes_ptr);
-    std::cout << "nbr size: " << neighbor_nodes_ptr.size() << std::endl;
+    // std::cout << "nbr size: " << neighbor_nodes_ptr.size() << std::endl;
     for (auto nbr_ptr : neighbor_nodes_ptr) {
       // nav_msgs::Path branch;
       // branch.header.frame_id = "map";
@@ -271,8 +288,9 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
         }
       }
     }
-    if (++count > 50000) {
+    if (++count > 5000000) {
       // error
+      std::cout << "max iteration" << std::endl;
       break;
     }
   }
@@ -282,7 +300,10 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
     return ErrorInfo(ErrorCode::GP_PATH_SEARCH_ERROR,
                      "Valid global path not found");
   }
-  std::cout << "success" << std::endl;
+  std::cout << "openlist size: " << openlist.size() << std::endl;
+  std::cout << "search tree size: " << search_tree_.size() << std::endl;
+
+  // std::cout << "success" << std::endl;
   // get path
   path.poses.clear();
   path.header.frame_id = "map";
@@ -294,6 +315,11 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
     end_node_ptr = end_node_ptr->parent_;
   }
   std::reverse(temp_nodes.begin(), temp_nodes.end());
+
+  // test
+  visualization_msgs::MarkerArray shape_array;
+  int shape_id = 0;
+  int tmp = 5;
   for (const auto &node : temp_nodes) {
     for (const auto &pos : node->intermediate_states_) {
       geometry_msgs::PoseStamped pose;
@@ -304,8 +330,70 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
       pose.pose.orientation.y = 0;
       pose.pose.orientation.z = sin(pos.z() * 0.5);
       path.poses.push_back(pose);
+
+      // test
+      if (tmp == 5) {
+        visualization_msgs::Marker shape;
+        shape.header.frame_id = "map";
+        shape.header.stamp = ros::Time::now();
+        shape.ns = "shape";
+        shape.id = shape_id;
+        if (shape_id == 0) {
+          shape.action = visualization_msgs::Marker::DELETEALL;
+        }
+        shape_id++;
+        shape.type = visualization_msgs::Marker::CUBE;
+        // shape.action = visualization_msgs::Marker::ADD;
+        shape.pose = pose.pose;
+        shape.scale.x = 4;
+        shape.scale.y = 2;
+        shape.scale.z = 0.1;
+        shape.color.a = 0.1;
+        shape.color.r = 0.5;
+        shape_array.markers.emplace_back(shape);
+      }
+      tmp--;
+      if (tmp == 0) {
+        tmp = 5;
+      }
     }
   }
+  // test
+  shape_path_pub_.publish(shape_array);
+  // vis tree
+  visualization_msgs::Marker tree_list;
+  tree_list.header.frame_id = "map";
+  tree_list.header.stamp = ros::Time::now();
+  tree_list.type = visualization_msgs::Marker::LINE_LIST;
+  tree_list.action = visualization_msgs::Marker::ADD;
+  tree_list.ns = "searched_tree";
+  tree_list.scale.x = 0.02;
+
+  tree_list.color.a = 1.0;
+  tree_list.color.r = 0;
+  tree_list.color.g = 0.5;
+  tree_list.color.b = 0;
+
+  tree_list.pose.orientation.w = 1.0;
+  tree_list.pose.orientation.x = 0.0;
+  tree_list.pose.orientation.y = 0.0;
+  tree_list.pose.orientation.z = 0.0;
+  geometry_msgs::Point point;
+  for (auto &it : search_tree_) {
+    if (it.second->parent_ != nullptr) {
+      point.x = it.second->pose_.x();
+      point.y = it.second->pose_.y();
+      point.z = 0.0;
+      tree_list.points.emplace_back(point);
+
+      point.x = it.second->parent_->pose_.x();
+      point.y = it.second->parent_->pose_.y();
+      point.z = 0.0;
+      tree_list.points.emplace_back(point);
+    }
+  }
+  searched_tree_pub_.publish(tree_list);
+
   return ErrorInfo(ErrorCode::OK,
                    "Global path length: " + std::to_string(path.poses.size()));
 }
@@ -549,4 +637,4 @@ int HybridAStar::toAdrHighRes(const Eigen::Vector3d &pos) {
   return idx(0) * (map_->height() * grid_size_xy_) * grid_size_phi_ +
          idx(1) * grid_size_phi_ + idx(2);
 }
-Eigen::Vector3i HybridAStar::adrToIdxHighRes(const int &adr) {}
+// Eigen::Vector3i HybridAStar::adrToIdxHighRes(const int &adr) {}
