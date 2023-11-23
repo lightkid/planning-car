@@ -9,8 +9,8 @@ HybridAStar::HybridAStar(ros::NodeHandle &nh) : nh_(nh) {
   nh.param("wheel_base", wheel_base_, 3.0);
   nh.param("width", width_, 2.0);
   nh.param("length", length_, 4.0);
-  nh.param("steering_angle", steering_angle_, 15.0);
-  nh.param("steering_angle_discrete_num", steering_angle_discrete_num_, 1);
+  nh.param("steering_angle", steering_angle_, 40.0);
+  nh.param("steering_angle_discrete_num", steering_angle_discrete_num_, 2);
   nh.param("segment_length", segment_length_, 1.6);
   nh.param("segment_length_discrete_num", segment_length_discrete_num_, 8);
   nh.param("grid_size_xy", grid_size_xy_, 5);
@@ -185,34 +185,56 @@ ErrorInfo HybridAStar::searchPath(const Eigen::Vector3d &start_pose,
         break;
       }
     }
+    nav_msgs::Path branch;
+    branch.poses.clear();
+    branch.header.frame_id = "map";
+    branch.header.stamp = ros::Time::now();
+    geometry_msgs::PoseStamped pose;
 
+    for (auto pos : current_ptr->intermediate_states_) {
+      pose.pose.position.x = pos.x();
+      pose.pose.position.y = pos.y();
+      pose.pose.orientation.w = cos(pos.z() * 0.5);
+      pose.pose.orientation.x = 0;
+      pose.pose.orientation.y = 0;
+      pose.pose.orientation.z = sin(pos.z() * 0.5);
+      branch.poses.push_back(pose);
+    }
+    pose.pose.position.x = current_ptr->pose_.x();
+    pose.pose.position.y = current_ptr->pose_.y();
+    pose.pose.orientation.w = cos(current_ptr->pose_.z() * 0.5);
+    pose.pose.orientation.x = 0;
+    pose.pose.orientation.y = 0;
+    pose.pose.orientation.z = sin(current_ptr->pose_.z() * 0.5);
+    branch.poses.push_back(pose);
+    nbr_vis_pub_.publish(branch);
     // get neighbors
     getNeighbors(current_ptr, neighbor_nodes_ptr);
     std::cout << "nbr size: " << neighbor_nodes_ptr.size() << std::endl;
     for (auto nbr_ptr : neighbor_nodes_ptr) {
-      nav_msgs::Path branch;
-      branch.header.frame_id = "map";
-      branch.header.stamp = ros::Time::now();
-      geometry_msgs::PoseStamped pose;
-      pose.pose.position.x = current_ptr->pose_.x();
-      pose.pose.position.y = current_ptr->pose_.y();
-      pose.pose.orientation.w = cos(current_ptr->pose_.z() * 0.5);
-      pose.pose.orientation.x = 0;
-      pose.pose.orientation.y = 0;
-      pose.pose.orientation.z = sin(current_ptr->pose_.z() * 0.5);
-      branch.poses.push_back(pose);
-      select_points_.poses.push_back(pose);
-      select_point_pub_.publish(select_points_);
-      for (auto pos : nbr_ptr->intermediate_states_) {
-        pose.pose.position.x = pos.x();
-        pose.pose.position.y = pos.y();
-        pose.pose.orientation.w = cos(pos.z() * 0.5);
-        pose.pose.orientation.x = 0;
-        pose.pose.orientation.y = 0;
-        pose.pose.orientation.z = sin(pos.z() * 0.5);
-        branch.poses.push_back(pose);
-      }
-      nbr_vis_pub_.publish(branch);
+      // nav_msgs::Path branch;
+      // branch.header.frame_id = "map";
+      // branch.header.stamp = ros::Time::now();
+      // geometry_msgs::PoseStamped pose;
+      // pose.pose.position.x = current_ptr->pose_.x();
+      // pose.pose.position.y = current_ptr->pose_.y();
+      // pose.pose.orientation.w = cos(current_ptr->pose_.z() * 0.5);
+      // pose.pose.orientation.x = 0;
+      // pose.pose.orientation.y = 0;
+      // pose.pose.orientation.z = sin(current_ptr->pose_.z() * 0.5);
+      // branch.poses.push_back(pose);
+      // select_points_.poses.push_back(pose);
+      // select_point_pub_.publish(select_points_);
+      // for (auto pos : nbr_ptr->intermediate_states_) {
+      //   pose.pose.position.x = pos.x();
+      //   pose.pose.position.y = pos.y();
+      //   pose.pose.orientation.w = cos(pos.z() * 0.5);
+      //   pose.pose.orientation.x = 0;
+      //   pose.pose.orientation.y = 0;
+      //   pose.pose.orientation.z = sin(pos.z() * 0.5);
+      //   branch.poses.push_back(pose);
+      // }
+      // nbr_vis_pub_.publish(branch);
       // compute move cost
       double move_cost = getMoveCost(current_ptr, nbr_ptr);
       double h_score = getHeuristic(current_ptr, goal_node_ptr); // TODO
@@ -433,13 +455,13 @@ bool HybridAStar::AnalyticExpansions(const StateNode::Ptr &current_node_ptr,
   VectorVec3d rs_path_poses = rs_path_ptr_->GetRSPath(
       current_node_ptr->pose_, goal_node_ptr->pose_, move_step_size_, length);
 
-  // for (const auto &pose : rs_path_poses) {
-  //   // Eigen::Vector2d pos = pose.head(2);
-  //   if (/*map_->isShapeInMap(pose.x(), pose.y(), pose.z()) ||*/
-  //       !map_->isShapeCollision(pose.x(), pose.y(), pose.z())) {
-  //     return false;
-  //   };
-  // }
+  for (const auto &pose : rs_path_poses) {
+    // Eigen::Vector2d pos = pose.head(2);
+    if (/*map_->isShapeInMap(pose.x(), pose.y(), pose.z()) ||*/
+        map_->isShapeCollision(pose.x(), pose.y(), pose.z())) {
+      return false;
+    };
+  }
 
   goal_node_ptr->intermediate_states_ = rs_path_poses;
   goal_node_ptr->parent_ = current_node_ptr;
