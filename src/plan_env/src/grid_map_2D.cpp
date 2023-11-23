@@ -57,9 +57,21 @@ void CostMap::posToIdx(const Eigen::Vector2d &pos, Eigen::Vector2i &idx) {
   idx(0) = floor((pos(0) - map_origin_(0)) * resolution_inv_);
   idx(1) = floor((pos(1) - map_origin_(1)) * resolution_inv_);
 }
+Eigen::Vector2i CostMap::posToIdx(const Eigen::Vector2d &pos) {
+  Eigen::Vector2i idx;
+  idx(0) = floor((pos(0) - map_origin_(0)) * resolution_inv_);
+  idx(1) = floor((pos(1) - map_origin_(1)) * resolution_inv_);
+  return idx;
+}
 void CostMap::idxToPos(const Eigen::Vector2i &idx, Eigen::Vector2d &pos) {
   pos(0) = (idx(0) + 0.5) * resolution_ + map_origin_(0);
   pos(1) = (idx(1) + 0.5) * resolution_ + map_origin_(1);
+}
+Eigen::Vector2d CostMap::idxToPos(const Eigen::Vector2i &idx) {
+  Eigen::Vector2d pos;
+  pos(0) = (idx(0) + 0.5) * resolution_ + map_origin_(0);
+  pos(1) = (idx(1) + 0.5) * resolution_ + map_origin_(1);
+  return pos;
 }
 int CostMap::toAdr(const int &x, const int &y) {
   return y * map_voxel_num_(0) + x;
@@ -96,5 +108,127 @@ bool CostMap::isInMap(const Eigen::Vector2d &pos) {
   return true;
 }
 
+void CostMap::boundIndex(Eigen::Vector2i &idx) {
+  Eigen::Vector2i id1;
+  id1(0) = std::max(std::min(idx(0), map_voxel_num_(0) - 1), 0);
+  id1(1) = std::max(std::min(idx(1), map_voxel_num_(1) - 1), 0);
+  idx = id1;
+}
+
+bool CostMap::isOcc(const Eigen::Vector2i &idx) {
+  return cost_map_data_.at(toAdr(idx)) > 10;
+}
+
 uint8_t CostMap::getCost(const int &adr) { return cost_map_data_.at(adr); }
+
+void CostMap::setShape(const double &width, const double &length) {
+  collision_radius_ = std::ceil(std::sqrt(width * width + length * length) *
+                                0.5 * resolution_inv_);
+  car_corner_.block<2, 1>(0, 0) = Eigen::Vector2d(length / 2, width / 2);
+  car_corner_.block<2, 1>(2, 0) = Eigen::Vector2d(-length / 2, width / 2);
+  car_corner_.block<2, 1>(4, 0) = Eigen::Vector2d(-length / 2, -width / 2);
+  car_corner_.block<2, 1>(6, 0) = Eigen::Vector2d(length / 2, -width / 2);
+  std::cout << "collision_radius: " << collision_radius_ << std::endl;
+  //           << "car_corner0: " << car_corner_.block<2, 1>(0, 0) << std::endl
+  //           << "car_corner1: " << car_corner_.block<2, 1>(2, 0) << std::endl
+  //           << "car_corner2: " << car_corner_.block<2, 1>(4, 0) << std::endl
+  //           << "car_corner3: " << car_corner_.block<2, 1>(6, 0) << std::endl;
+}
+bool CostMap::isShapeInMap(const double &x, const double &y,
+                           const double &theta) {
+  //四个角在矩形地图内，车就在内
+  //车的四个角
+  Eigen::Matrix2d R;
+  R << std::cos(theta), -std::sin(theta), std::sin(theta), std::cos(theta);
+  Eigen::Vector2d corner;
+  // Eigen::Matrix<double, 8, 1> transformed_corner;
+  for (unsigned int i = 0; i < 4u; ++i) {
+    corner = R * car_corner_.segment<2>(i * 2) + Eigen::Vector2d(x, y);
+    // std::cout << "corner" << i << ": " << corner.transpose() << std::endl;
+    if (!isInMap(corner)) {
+      return false;
+    }
+  }
+  return true;
+}
+bool poseInsideShape(std::vector<Eigen::Vector2d> &corners, int xp, int yp) {
+  Eigen::Vector2d &A = corners[0];
+  Eigen::Vector2d &B = corners[1];
+  Eigen::Vector2d &C = corners[2];
+  Eigen::Vector2d &D = corners[3];
+  int a = (B.x() - A.x()) * (yp - A.y()) - (B.y() - A.y()) * (xp - A.x());
+  int b = (C.x() - B.x()) * (yp - B.y()) - (C.y() - B.y()) * (xp - B.x());
+  int c = (D.x() - C.x()) * (yp - C.y()) - (D.y() - C.y()) * (xp - C.x());
+  int d = (A.x() - D.x()) * (yp - D.y()) - (A.y() - D.y()) * (xp - D.x());
+  // std::cout << "abcd:" << a << " " << b << " " << c << " " << d << std::endl;
+  if ((a > 0 && b > 0 && c > 0 && d > 0) ||
+      (a < 0 && b < 0 && c < 0 && d < 0)) {
+    return true;
+  }
+  return false;
+}
+bool CostMap::isShapeCollision(const double &x, const double &y,
+                               const double &theta) {
+  //确保车四个角都在地图内
+  // if (!isShapeInMap(x, y, theta))
+  //   return true;
+
+  //对车中心周围的occ grid和车做矩形碰撞检测
+  Eigen::Vector2i car_idx;
+  posToIdx(Eigen::Vector2d(x, y), car_idx);
+  // std::cout << "car_idx: " << car_idx.transpose() << std::endl;
+  Eigen::Vector2i max_boundary =
+      car_idx + Eigen::Vector2i(collision_radius_, collision_radius_);
+  Eigen::Vector2i min_boundary =
+      car_idx - Eigen::Vector2i(collision_radius_, collision_radius_);
+  boundIndex(max_boundary);
+  boundIndex(min_boundary);
+  // std::cout << "max boundary: " << max_boundary.transpose() << std::endl;
+  // std::cout << "min boundary: " << min_boundary.transpose() << std::endl;
+
+  //车的四个角
+  Eigen::Matrix2d R;
+  R << std::cos(theta), -std::sin(theta), std::sin(theta), std::cos(theta);
+  std::vector<Eigen::Vector2d> car_corners;
+  std::vector<Eigen::Vector2i> car_corners_idx;
+  for (unsigned int i = 0; i < 4u; ++i) {
+    car_corners.emplace_back(R * car_corner_.segment<2>(i * 2) +
+                             Eigen::Vector2d(x, y));
+    car_corners_idx.emplace_back(posToIdx(car_corners[i]));
+    if (!isInMap(car_corners[i])) { //确保四个角在地图里
+      return true;
+    }
+  }
+  double r = resolution_ * 0.5;
+  for (int dx = min_boundary(0); dx <= max_boundary(0); ++dx) {
+    for (int dy = min_boundary(1); dy <= max_boundary(1); ++dy) {
+      Eigen::Vector2i idx;
+      idx(0) = dx;
+      idx(1) = dy;
+      if (isOcc(idx)) {
+        // std::cout << "occ: " << idx.transpose() << std::endl;
+        for (auto id : car_corners_idx) {
+          if (id(0) == idx(0) && id(1) == idx(1)) {
+            // shape的角点在grid中
+            return true;
+          }
+        }
+        // grid的4个点在shape中
+        Eigen::Vector2d pos;
+        idxToPos(idx, pos);
+        bool ans = poseInsideShape(car_corners, pos(0) - r, pos(1) - r) ||
+                   poseInsideShape(car_corners, pos(0) - r, pos(1) + r) ||
+                   poseInsideShape(car_corners, pos(0) + r, pos(1) + r) ||
+                   poseInsideShape(car_corners, pos(0) + r, pos(1) - r);
+        // std::cout << "occ collision: " << ans << std::endl;
+        if (ans) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+bool isShapeCollisionVis(const double &x, const double &y, const double &theta,
+                         std::vector<Eigen::Vector2i> &collision_idxs) {}
 // } // namespace cost_map

@@ -2,8 +2,8 @@
 #define A_STAR_HPP_
 
 #include "geometry_msgs/PoseStamped.h"
-#include "geometry_msgs/PoseWithCovarianceStamped.h"
-#include "nav_msgs/OccupancyGrid.h"
+// #include "geometry_msgs/PoseWithCovarianceStamped.h"
+// #include "nav_msgs/OccupancyGrid.h"
 #include "nav_msgs/Path.h"
 #include <ros/ros.h>
 
@@ -28,8 +28,9 @@ public:
   AStar(ros::NodeHandle &nh);
   ~AStar() {}
 
-  void
-  poseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msg);
+  // void
+  // poseCallback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr
+  // &msg);
   void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
   void pathVisualization(const nav_msgs::Path &path);
 

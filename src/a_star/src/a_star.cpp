@@ -7,17 +7,17 @@ AStar::AStar(ros::NodeHandle &nh) : nh_(nh) {
   }
   ROS_INFO("planner get map!");
   global_path_pub_ = nh_.advertise<nav_msgs::Path>("global_path", 2);
-  pose_sub_ = nh_.subscribe<geometry_msgs::PoseWithCovarianceStamped>(
-      "/initialpose", 10, &AStar::poseCallback, this);
+  // pose_sub_ = nh_.subscribe<geometry_msgs::PoseWithCovarianceStamped>(
+  //     "/initialpose", 10, &AStar::poseCallback, this);
   goal_sub_ = nh_.subscribe<geometry_msgs::PoseStamped>(
       "/move_base_simple/goal", 10, &AStar::goalCallback, this);
   ROS_INFO("planner is ready!");
 }
-void AStar::poseCallback(
-    const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msg) {
-  // pose_(0) = msg->pose.pose.position.x;
-  // pose_(1) = msg->pose.pose.position.y;
-}
+// void AStar::poseCallback(
+//     const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &msg) {
+//   // pose_(0) = msg->pose.pose.position.x;
+//   // pose_(1) = msg->pose.pose.position.y;
+// }
 void AStar::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
   if (isPose_) {
     pose_(0) = msg->pose.position.x;
@@ -74,7 +74,7 @@ ErrorInfo AStar::searchPath(const int &start_adr, const int &goal_adr,
   };
   std::priority_queue<int, std::vector<int>, decltype(compare)> openlist(
       compare);
-  search_nodes_.at(goal_adr).g_score_ = 0;
+  search_nodes_.at(start_adr).g_score_ = 0;
   openlist.push(start_adr);
   std::vector<int> neighbors_adr;
   int current_adr, move_cost, count = 0;
