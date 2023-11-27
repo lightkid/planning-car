@@ -156,10 +156,10 @@ bool poseInsideShape(std::vector<Eigen::Vector2d> &corners, int xp, int yp) {
   Eigen::Vector2d &B = corners[1];
   Eigen::Vector2d &C = corners[2];
   Eigen::Vector2d &D = corners[3];
-  int a = (B.x() - A.x()) * (yp - A.y()) - (B.y() - A.y()) * (xp - A.x());
-  int b = (C.x() - B.x()) * (yp - B.y()) - (C.y() - B.y()) * (xp - B.x());
-  int c = (D.x() - C.x()) * (yp - C.y()) - (D.y() - C.y()) * (xp - C.x());
-  int d = (A.x() - D.x()) * (yp - D.y()) - (A.y() - D.y()) * (xp - D.x());
+  double a = (B.x() - A.x()) * (yp - A.y()) - (B.y() - A.y()) * (xp - A.x());
+  double b = (C.x() - B.x()) * (yp - B.y()) - (C.y() - B.y()) * (xp - B.x());
+  double c = (D.x() - C.x()) * (yp - C.y()) - (D.y() - C.y()) * (xp - C.x());
+  double d = (A.x() - D.x()) * (yp - D.y()) - (A.y() - D.y()) * (xp - D.x());
   // std::cout << "abcd:" << a << " " << b << " " << c << " " << d << std::endl;
   if ((a > 0 && b > 0 && c > 0 && d > 0) ||
       (a < 0 && b < 0 && c < 0 && d < 0)) {
