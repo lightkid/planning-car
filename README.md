@@ -25,6 +25,9 @@ map中每个栅格不只取中心，而是包含很多状态($x,y,\phi$)，因�
 
 使用2D Nav Goal点击地图即可，第一次是起点，第二次是终点
 
+效果：
+![hybridastar](img/hybridastar.png)
+
 TODO:
 使用Astar优化Hybrid Astar扩展节点的速度，提供正确的扩展方向
 开发2.5D的hybridA*算法
