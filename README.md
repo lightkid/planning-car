@@ -9,6 +9,9 @@ ros集成源包
 ## plan_env:
 地图管理，提供操作地图的API
 
+## esdf_2d:
+将占据栅格地图转化为esdf地图，原理参考[FIESTA: Fast Incremental Euclidean Distance Fields for Online Motion Planning of Aerial Robots](https://arxiv.org/abs/1903.02144)
+
 ## a_star
 
 运行：
