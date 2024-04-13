@@ -6,7 +6,7 @@ set(CMAKE_BUILD_TYPE "Release")
 ADD_COMPILE_OPTIONS(-std=c++14 )
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
-# find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED)
 
 
 find_package(catkin REQUIRED COMPONENTS
@@ -16,7 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   # std_msgs
   visualization_msgs
   # laser_geometry
-  # cv_bridge
+  cv_bridge
   # pcl_ros
   # message_filters
 )
@@ -37,7 +37,7 @@ include_directories(
     ${catkin_INCLUDE_DIRS}
     ${Eigen3_INCLUDE_DIRS} 
     # ${PCL_INCLUDE_DIRS}
-    # ${OpenCV_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
 )
 
 # link_directories(${PCL_LIBRARY_DIRS})
@@ -45,8 +45,10 @@ include_directories(
 add_library( plan_env 
     src/grid_map_2D.cpp 
     # src/raycast.cpp
-    )
+)
 target_link_libraries( plan_env
     ${catkin_LIBRARIES} 
     # ${PCL_LIBRARIES}
-    )  
+    ${OpenCV_LIBS}
+    dw
+)  

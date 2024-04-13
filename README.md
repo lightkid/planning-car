@@ -12,6 +12,12 @@ ros集成源包
 ## esdf_2d:
 将占据栅格地图转化为esdf地图，原理参考[FIESTA: Fast Incremental Euclidean Distance Fields for Online Motion Planning of Aerial Robots](https://arxiv.org/abs/1903.02144)
 
+其中双端链表没整懂，使用的unorder_set作为存所有coc是自己的grids
+
+效果如下：
+
+![maze](img/maze.png)
+
 ## a_star
 
 运行：

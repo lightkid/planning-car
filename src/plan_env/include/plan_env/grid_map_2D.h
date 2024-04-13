@@ -1,13 +1,55 @@
 #ifndef GRID_MAP_2D_H_
 #define GRID_MAP_2D_H_
 
-#include "nav_msgs/OccupancyGrid.h"
-#include <Eigen/Eigen>
-#include <memory>
+#include <cv_bridge/cv_bridge.h>
+#include <nav_msgs/OccupancyGrid.h>
+#include <opencv2/opencv.hpp>
 #include <ros/ros.h>
+#include <sensor_msgs/Image.h>
+
+#include <Eigen/Eigen>
+
+#include <list>
+#include <memory>
+#include <queue>
+#include <unordered_set>
 #include <vector>
 
+#include <iomanip>
+
 // namespace cost_map {
+
+typedef int Adr;
+typedef Eigen::Vector2i Idx;
+typedef Eigen::Vector2d Pos;
+#define IdealPointAdr -1
+
+struct EsdfGridData { // Array implementation
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  typedef std::shared_ptr<EsdfGridData> Ptr;
+  Adr adr{0};                                      //
+  double occ{0.0};                                 // probability of occupancy
+  double dist{std::numeric_limits<double>::max()}; // euclidean distance to the
+                                                   // cloest obstacle
+  Adr coc{IdealPointAdr}; // the adr of the cloest obstacle
+  bool observed{false};   // whether this grid is ever observed
+  std::unordered_set<Adr>
+      dll;               // all grids that the cloest obstacle is this grid
+  std::vector<Adr> nbrs; // all observed neighbors of this grid
+  EsdfGridData() = delete;
+  EsdfGridData(Adr _adr) noexcept : adr(_adr) {}
+  void setOcc() {
+    occ = 1.0;
+    dist = 0.0;
+    coc = adr;
+  }
+  void setCoc(Adr coc_adr, double _dist) {
+    coc = coc_adr;
+    occ = 0.0;
+    dist = _dist;
+  }
+};
+
 class CostMap {
   // pos 二维世界坐标
   // idx 二维栅格坐标
@@ -43,6 +85,10 @@ public:
   double resolution() { return resolution_; }
   Eigen::Vector2d &map_origin() { return map_origin_; }
 
+  // esdf
+  bool updateESDF();
+  void getNeighbors(EsdfGridData::Ptr &node);
+
   // car shape
   void setShape(const double &width, const double &length);
   bool isShapeInMap(const double &x, const double &y, const double &theta);
@@ -50,6 +96,7 @@ public:
 
 private:
   std::vector<uint8_t> cost_map_data_;
+  std::vector<EsdfGridData::Ptr> esdf_map_data_;
 
   Eigen::Vector2d map_origin_, map_size_;
   Eigen::Vector2d map_min_boundary_, map_max_boundary_;

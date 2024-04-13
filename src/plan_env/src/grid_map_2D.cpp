@@ -1,5 +1,9 @@
 #include "plan_env/grid_map_2D.h"
-
+#define BACKWARD_HAS_DW 1
+#include "backward.hpp"
+namespace backward {
+backward::SignalHandling sh;
+}
 // namespace cost_map {
 CostMap::CostMap(ros::NodeHandle &nh, const std::string &topic_name) {
   nh_ = nh;
@@ -29,7 +33,7 @@ void CostMap::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &map) {
   std::cout << "minb: " << map_min_boundary_.transpose() << std::endl;
   std::cout << "maxb: " << map_max_boundary_.transpose() << std::endl;
   std::cout << "widthx, heighty: " << map_voxel_num_.transpose() << std::endl;
-  int buffer_size = map_voxel_num_(0) * map_voxel_num_(1);
+  unsigned int buffer_size = map_voxel_num_(0) * map_voxel_num_(1);
   cost_map_data_.resize(buffer_size, 0);
   std::cout << "map buffer length: " << map->data.size()
             << " costmap buffer length: " << buffer_size << std::endl;
@@ -52,7 +56,124 @@ void CostMap::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &map) {
   }
   has_map_ = true;
   ROS_INFO("map init over");
+  updateESDF();
 }
+bool CostMap::updateESDF() {
+  // TODO: update esdf
+  // ref: FIESTA: Fast Incremental Euclidean Distance Fields for Online Motion
+  // Planning of Aerial Robots Alg.1
+  unsigned int buffer_size = map_voxel_num_(0) * map_voxel_num_(1);
+  esdf_map_data_.resize(buffer_size);
+  std::queue<EsdfGridData::Ptr> update_queue;
+  for (int adr = 0; adr < buffer_size; ++adr) {
+    esdf_map_data_[adr] = std::make_shared<EsdfGridData>(adr);
+    if (cost_map_data_[adr] == 255) {
+      esdf_map_data_[adr]->setOcc();
+      update_queue.push(esdf_map_data_[adr]);
+    }
+  }
+  // std::cout << "ok" << std::endl;
+  auto Dist = [this](Adr adr1, Adr adr2) {
+    Eigen::Vector2i idx1 = adrToIdx(adr1);
+    Eigen::Vector2i idx2 = adrToIdx(adr2);
+    int dx = std::abs(idx1(0) - idx2(0));
+    int dy = std::abs(idx1(1) - idx2(1));
+    // Euclidean distance
+    return sqrt(double(dx * dx + dy * dy));
+  };
+  // std::cout << "ok1" << std::endl;
+  int count = 1;
+  while (!update_queue.empty()) {
+    auto cur = update_queue.front();
+    // std::cout << "cur adr: " << cur->adr << " coc: " << cur->coc <<
+    // std::endl;
+    update_queue.pop();
+    getNeighbors(cur);
+    // std::cout << "o3" << std::endl;
+    double max_dist = 0.0;
+    for (auto nbr_adr : cur->nbrs) {
+      auto &nbr = esdf_map_data_[nbr_adr];
+      // if (nbr->observed) {
+      //   continue;
+      // }
+      // std::cout << "nbr adr: " << nbr_adr << " coc: " << nbr->coc <<
+      // std::endl;
+      double dist = Dist(cur->coc, nbr_adr);
+      max_dist = std::max(max_dist, dist);
+      // std::cout << "o5" << std::endl;
+      // std::cout << dist << " " << nbr->dist << std::endl;
+      if (dist < nbr->dist) { // Absolutely free
+        // 将nbr从nbr.coc的dll中删除
+        if (nbr->coc != IdealPointAdr) {
+          auto &oldcoc = esdf_map_data_[nbr->coc];
+          oldcoc->dll.erase(nbr->adr);
+        }
+        // 将nbr加入cur的coc的dll
+        auto &newcoc = esdf_map_data_[cur->coc];
+        nbr->setCoc(newcoc->adr, dist);
+        newcoc->dll.insert(nbr->adr);
+        //加入update queue
+        update_queue.push(nbr);
+        // std::cout << nbr->coc << std::endl;
+        // nbr->observed = true;
+      }
+    }
+    // std::cout << std::endl;
+    // if (count == 145) {
+    //   break;
+    // }
+    // ++count;
+  }
+  // TODO:使用opencv显示灰度图
+  cv::Mat res(cv::Size(map_voxel_num_(1), map_voxel_num_(0)), CV_32FC1,
+              cv::Scalar(0));
+  // std::cout << "ok2" << std::endl;
+  for (unsigned int w = 0; w < map_voxel_num_(0); ++w) {
+    for (unsigned int h = 0; h < map_voxel_num_(1); ++h) {
+      if (esdf_map_data_[toAdr(w, h)]->dist > 1000.0) {
+        std::cout << "-"
+                  << "\t";
+      } else {
+        std::cout << std::setprecision(2) << esdf_map_data_[toAdr(w, h)]->dist
+                  << "\t";
+      }
+      res.at<float>(w, h) =
+          (float)(esdf_map_data_[toAdr(w, h)]->dist); // TODO： 不要用at
+    }
+    std::cout << std::endl;
+  }
+  cv_bridge::CvImage out_msg;
+  out_msg.header.stamp = ros::Time::now();
+  out_msg.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+  out_msg.image = res.clone();
+  ros::Publisher pureb_depth = nh_.advertise<sensor_msgs::Image>("/esdf", 10);
+  for (int i = 0; i < 100; ++i) {
+    pureb_depth.publish(out_msg.toImageMsg());
+    ros::Duration(0.1).sleep();
+  }
+
+  // cv::imshow("esdf", res);
+  // cv::waitKey(0);
+  ROS_INFO("esdf map update over");
+  return true;
+}
+
+void CostMap::getNeighbors(EsdfGridData::Ptr &node) {
+  node->nbrs.clear();
+  Idx current_idx = adrToIdx(node->adr);
+  Idx nbr_idx;
+  for (int dx = -1; dx < 2; ++dx)
+    for (int dy = -1; dy < 2; ++dy) {
+      if (dx == 0 && dy == 0)
+        continue;
+      nbr_idx(0) = current_idx(0) + dx;
+      nbr_idx(1) = current_idx(1) + dy;
+      if (isInMap(nbr_idx)) {
+        node->nbrs.emplace_back(toAdr(nbr_idx));
+      }
+    }
+}
+
 void CostMap::posToIdx(const Eigen::Vector2d &pos, Eigen::Vector2i &idx) {
   idx(0) = floor((pos(0) - map_origin_(0)) * resolution_inv_);
   idx(1) = floor((pos(1) - map_origin_(1)) * resolution_inv_);
@@ -129,10 +250,14 @@ void CostMap::setShape(const double &width, const double &length) {
   car_corner_.block<2, 1>(4, 0) = Eigen::Vector2d(-length / 2, -width / 2);
   car_corner_.block<2, 1>(6, 0) = Eigen::Vector2d(length / 2, -width / 2);
   std::cout << "collision_radius: " << collision_radius_ << std::endl;
-  //           << "car_corner0: " << car_corner_.block<2, 1>(0, 0) << std::endl
-  //           << "car_corner1: " << car_corner_.block<2, 1>(2, 0) << std::endl
-  //           << "car_corner2: " << car_corner_.block<2, 1>(4, 0) << std::endl
-  //           << "car_corner3: " << car_corner_.block<2, 1>(6, 0) << std::endl;
+  //           << "car_corner0: " << car_corner_.block<2, 1>(0, 0) <<
+  //           std::endl
+  //           << "car_corner1: " << car_corner_.block<2, 1>(2, 0) <<
+  //           std::endl
+  //           << "car_corner2: " << car_corner_.block<2, 1>(4, 0) <<
+  //           std::endl
+  //           << "car_corner3: " << car_corner_.block<2, 1>(6, 0) <<
+  //           std::endl;
 }
 bool CostMap::isShapeInMap(const double &x, const double &y,
                            const double &theta) {
@@ -160,7 +285,8 @@ bool poseInsideShape(std::vector<Eigen::Vector2d> &corners, int xp, int yp) {
   double b = (C.x() - B.x()) * (yp - B.y()) - (C.y() - B.y()) * (xp - B.x());
   double c = (D.x() - C.x()) * (yp - C.y()) - (D.y() - C.y()) * (xp - C.x());
   double d = (A.x() - D.x()) * (yp - D.y()) - (A.y() - D.y()) * (xp - D.x());
-  // std::cout << "abcd:" << a << " " << b << " " << c << " " << d << std::endl;
+  // std::cout << "abcd:" << a << " " << b << " " << c << " " << d <<
+  // std::endl;
   if ((a > 0 && b > 0 && c > 0 && d > 0) ||
       (a < 0 && b < 0 && c < 0 && d < 0)) {
     return true;
