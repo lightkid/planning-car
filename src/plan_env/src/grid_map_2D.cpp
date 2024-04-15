@@ -7,6 +7,7 @@ backward::SignalHandling sh;
 // namespace cost_map {
 CostMap::CostMap(ros::NodeHandle &nh, const std::string &topic_name) {
   nh_ = nh;
+  esdf_pub_ = nh_.advertise<sensor_msgs::Image>("/esdf", 10);
   map_sub_ = nh_.subscribe<nav_msgs::OccupancyGrid>(
       topic_name, 2, &CostMap::mapCallback, this);
 }
@@ -56,7 +57,11 @@ void CostMap::mapCallback(const nav_msgs::OccupancyGrid::ConstPtr &map) {
   }
   has_map_ = true;
   ROS_INFO("map init over");
+  auto start_time = ros::Time::now();
   updateESDF();
+  auto end_time = ros::Time::now();
+  ROS_INFO("update esdf cost: %f ms", (end_time - start_time).toSec() * 1000);
+  ESDFVis();
 }
 bool CostMap::updateESDF() {
   // TODO: update esdf
@@ -72,7 +77,6 @@ bool CostMap::updateESDF() {
       update_queue.push(esdf_map_data_[adr]);
     }
   }
-  // std::cout << "ok" << std::endl;
   auto Dist = [this](Adr adr1, Adr adr2) {
     Eigen::Vector2i idx1 = adrToIdx(adr1);
     Eigen::Vector2i idx2 = adrToIdx(adr2);
@@ -81,27 +85,16 @@ bool CostMap::updateESDF() {
     // Euclidean distance
     return sqrt(double(dx * dx + dy * dy));
   };
-  // std::cout << "ok1" << std::endl;
   int count = 1;
   while (!update_queue.empty()) {
     auto cur = update_queue.front();
-    // std::cout << "cur adr: " << cur->adr << " coc: " << cur->coc <<
-    // std::endl;
     update_queue.pop();
     getNeighbors(cur);
-    // std::cout << "o3" << std::endl;
     double max_dist = 0.0;
     for (auto nbr_adr : cur->nbrs) {
       auto &nbr = esdf_map_data_[nbr_adr];
-      // if (nbr->observed) {
-      //   continue;
-      // }
-      // std::cout << "nbr adr: " << nbr_adr << " coc: " << nbr->coc <<
-      // std::endl;
       double dist = Dist(cur->coc, nbr_adr);
       max_dist = std::max(max_dist, dist);
-      // std::cout << "o5" << std::endl;
-      // std::cout << dist << " " << nbr->dist << std::endl;
       if (dist < nbr->dist) { // Absolutely free
         // 将nbr从nbr.coc的dll中删除
         if (nbr->coc != IdealPointAdr) {
@@ -114,8 +107,6 @@ bool CostMap::updateESDF() {
         newcoc->dll.insert(nbr->adr);
         //加入update queue
         update_queue.push(nbr);
-        // std::cout << nbr->coc << std::endl;
-        // nbr->observed = true;
       }
     }
     // std::cout << std::endl;
@@ -125,53 +116,87 @@ bool CostMap::updateESDF() {
     // ++count;
   }
   // TODO:使用opencv显示灰度图
+  // cv::Mat res(cv::Size(map_voxel_num_(1), map_voxel_num_(0)), CV_32FC1,
+  //             cv::Scalar(0));
+  // std::cout << "ok2" << std::endl;
+  // for (unsigned int w = 0; w < map_voxel_num_(0); ++w) {
+  //   for (unsigned int h = 0; h < map_voxel_num_(1); ++h) {
+  //     if (esdf_map_data_[toAdr(w, h)]->dist > 1000.0) {
+  //       std::cout << "-"
+  //                 << "\t";
+  //     } else {
+  //       std::cout << std::setprecision(2) << esdf_map_data_[toAdr(w,
+  //       h)]->dist
+  //                 << "\t";
+  //     }
+  //     res.at<float>(w, h) =
+  //         (float)(esdf_map_data_[toAdr(w, h)]->dist); // TODO： 不要用at
+  //   }
+  //   std::cout << std::endl;
+  // }
+  // cv_bridge::CvImage out_msg;
+  // out_msg.header.stamp = ros::Time::now();
+  // out_msg.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
+  // out_msg.image = res.clone();
+  // ros::Publisher pureb_depth = nh_.advertise<sensor_msgs::Image>("/esdf",
+  // 10); for (int i = 0; i < 100; ++i) {
+  //   pureb_depth.publish(out_msg.toImageMsg());
+  //   ros::Duration(0.1).sleep();
+  // }
+
+  ROS_INFO("esdf map update over");
+  return true;
+}
+void CostMap::ESDFVis() {
+  // TODO:使用opencv显示灰度图
   cv::Mat res(cv::Size(map_voxel_num_(1), map_voxel_num_(0)), CV_32FC1,
               cv::Scalar(0));
-  // std::cout << "ok2" << std::endl;
   for (unsigned int w = 0; w < map_voxel_num_(0); ++w) {
     for (unsigned int h = 0; h < map_voxel_num_(1); ++h) {
-      if (esdf_map_data_[toAdr(w, h)]->dist > 1000.0) {
-        std::cout << "-"
-                  << "\t";
-      } else {
-        std::cout << std::setprecision(2) << esdf_map_data_[toAdr(w, h)]->dist
-                  << "\t";
-      }
-      res.at<float>(w, h) =
-          (float)(esdf_map_data_[toAdr(w, h)]->dist); // TODO： 不要用at
+      // if (esdf_map_data_[toAdr(w, h)]->dist > 1000.0) {
+      //   std::cout << "-"
+      //             << "\t";
+      // } else {
+      //   std::cout << std::setprecision(2) << esdf_map_data_[toAdr(w,
+      //   h)]->dist
+      //             << "\t";
+      // }
+      res.at<float>(w, h) = (float)(esdf_map_data_[toAdr(w, h)]->dist);
     }
-    std::cout << std::endl;
+    // std::cout << std::endl;
   }
   cv_bridge::CvImage out_msg;
   out_msg.header.stamp = ros::Time::now();
   out_msg.encoding = sensor_msgs::image_encodings::TYPE_32FC1;
   out_msg.image = res.clone();
-  ros::Publisher pureb_depth = nh_.advertise<sensor_msgs::Image>("/esdf", 10);
   for (int i = 0; i < 100; ++i) {
-    pureb_depth.publish(out_msg.toImageMsg());
+    esdf_pub_.publish(out_msg.toImageMsg());
     ros::Duration(0.1).sleep();
   }
-
-  // cv::imshow("esdf", res);
-  // cv::waitKey(0);
-  ROS_INFO("esdf map update over");
-  return true;
 }
-
 void CostMap::getNeighbors(EsdfGridData::Ptr &node) {
   node->nbrs.clear();
   Idx current_idx = adrToIdx(node->adr);
   Idx nbr_idx;
-  for (int dx = -1; dx < 2; ++dx)
-    for (int dy = -1; dy < 2; ++dy) {
-      if (dx == 0 && dy == 0)
-        continue;
-      nbr_idx(0) = current_idx(0) + dx;
-      nbr_idx(1) = current_idx(1) + dy;
-      if (isInMap(nbr_idx)) {
-        node->nbrs.emplace_back(toAdr(nbr_idx));
-      }
+  // 8-connectivity
+  // for (int dx = -1; dx < 2; ++dx)
+  //   for (int dy = -1; dy < 2; ++dy) {
+  //     if (dx == 0 && dy == 0)
+  //       continue;
+  //     nbr_idx(0) = current_idx(0) + dx;
+  //     nbr_idx(1) = current_idx(1) + dy;
+  //     if (isInMap(nbr_idx)) {
+  //       node->nbrs.emplace_back(toAdr(nbr_idx));
+  //     }
+  //   }
+  // 4-connectivity
+  std::vector<Idx> dirs = {{0, 1}, {-1, 0}, {0, -1}, {1, 0}};
+  for (Idx &dir : dirs) {
+    nbr_idx = current_idx + dir;
+    if (isInMap(nbr_idx)) {
+      node->nbrs.emplace_back(toAdr(nbr_idx));
     }
+  }
 }
 
 void CostMap::posToIdx(const Eigen::Vector2d &pos, Eigen::Vector2i &idx) {

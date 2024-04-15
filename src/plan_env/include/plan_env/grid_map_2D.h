@@ -87,6 +87,7 @@ public:
 
   // esdf
   bool updateESDF();
+  void ESDFVis();
   void getNeighbors(EsdfGridData::Ptr &node);
 
   // car shape
@@ -107,6 +108,7 @@ private:
   ros::NodeHandle nh_;
   ros::Subscriber map_sub_;
   bool has_map_{false};
+  ros::Publisher esdf_pub_;
 
   Eigen::Matrix<double, 8, 1> car_corner_;
   int collision_radius_{};
